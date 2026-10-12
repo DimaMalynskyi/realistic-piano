@@ -1,0 +1,80 @@
+:root {
+	color-scheme: light;
+	font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+	background: #c1bfbb;
+	color: #252321;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	min-height: 100vh;
+	margin: 0;
+	display: grid;
+	place-items: center;
+	padding: 32px 16px;
+	background:
+		radial-gradient(ellipse at 50% 0%, #fffdf7 0%, transparent 65%),
+		#f2eee5;
+}
+
+.piano {
+	position: relative;
+	display: flex;
+	width: min(900px, calc(100vw - 32px));
+	aspect-ratio: 10 / 3;
+	min-height: 210px;
+	overflow: hidden;
+	border: 8px solid #262321;
+	border-radius: 8px;
+	background: #262321;
+	box-shadow: 0 24px 48px rgb(47 39 29 / 18%), 0 4px 0 #a39a89;
+	touch-action: none;
+	user-select: none;
+}
+
+.key {
+	position: relative;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	padding: 0 0 16px;
+	cursor: pointer;
+	outline: none;
+	transition: background-color 90ms ease, transform 90ms ease;
+}
+
+.key::after {
+	position: absolute;
+	bottom: 14px;
+	left: 0;
+	width: 100%;
+	content: attr(data-note);
+	text-align: center;
+	font-size: clamp(12px, 2vw, 17px);
+	font-weight: 700;
+	pointer-events: none;
+}
+
+.white {
+	z-index: 0;
+	flex: 1 1 0;
+	min-width: 0;
+	border-right: 1px solid #c8c2b7;
+	border-radius: 0 0 4px 4px;
+	background: linear-gradient(100deg, #fffefa, #e9e5dc);
+	color: #393530;
+}
+
+.white:last-child {
+	border-right: 0;
+}
+
+.white.active {
+	transform: translateY(3px);
+	background: #f2c46d;
+}
+
+
