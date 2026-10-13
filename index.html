@@ -1,25 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Midi Piano</title>
     <script src="script.js" defer></script>
-   <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="piano">
-        <div data-note="C" class="key white"></div>
-        <div data-note="Db" class="key black"></div>
-        <div data-note="D" class="key white"></div>
-        <div data-note="Eb" class="key black"></div>
-        <div data-note="E" class="key white"></div>
-        <div data-note="F" class="key white"></div>
-        <div data-note="Gb" class="key black"></div>
-        <div data-note="G" class="key white"></div>
-        <div data-note="Ab" class="key black"></div>
-        <div data-note="A" class="key white"></div>
-        <div data-note="Bb" class="key black"></div>
-        <div data-note="B" class="key white"></div>
-    </div>
-
+    <main class="instrument">
+        <header class="controls">
+            <h1>Midi Piano</h1>
+            <label for="octave">Keyboard octave
+                <select id="octave">
+                    <option value="2">C2 - B2 (1)</option>
+                    <option value="3">C3 - B3 (2)</option>
+                    <option value="4" selected>C4 - B4 (3)</option>
+                    <option value="5">C5 - B5 (4)</option>
+                    <option value="6">C6 - B6 (5)</option>
+                </select>
+            </label>
+            <label for="volume">Volume
+                <input id="volume" type="range" min="0" max="100" value="65">
+            </label>
+        </header>
+        <div class="piano-scroll" tabindex="0" aria-label="Scroll piano keyboard">
+            <div class="piano" role="group" aria-label="Piano, C2 through B6"></div>
+        </div>
+        <p class="help">White keys: Z X C V B N M. Black keys: S D G H J.
+            Octave: 1-5 or Left/Right arrows. Scroll sideways for the full keyboard.</p>
+        <p id="audio-status" role="status">Sound starts when you play a note.</p>
+        <noscript>Enable JavaScript to play the piano.</noscript>
+    </main>
 </body>
 </html>

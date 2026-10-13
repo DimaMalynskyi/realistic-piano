@@ -21,12 +21,58 @@ body {
 		linear-gradient(155deg, #303234 0%, #191b1d 42%, #08090a 100%);
 }
 
+.instrument {
+	width: min(1440px, 100%);
+	min-width: 0;
+}
+
+.controls {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 16px 28px;
+	margin-bottom: 20px;
+	color: #e9e5dc;
+}
+
+h1 {
+	margin: 0 auto 0 0;
+	font-size: 24px;
+}
+
+.controls label {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 14px;
+}
+
+select {
+	padding: 7px;
+	border: 1px solid #777;
+	border-radius: 4px;
+	background: #262321;
+	color: #fffefa;
+	font: inherit;
+}
+
+input[type="range"] {
+	width: 110px;
+	accent-color: #f2c46d;
+}
+
+.piano-scroll {
+	width: 100%;
+	overflow-x: auto;
+	padding-bottom: 12px;
+	scrollbar-color: #a39a89 #191b1d;
+}
+
 .piano {
 	position: relative;
 	display: flex;
-	width: min(900px, calc(100vw - 32px));
-	aspect-ratio: 10 / 3;
-	min-height: 210px;
+	width: max(100%, 1260px);
+	height: 270px;
 	overflow: hidden;
 	border: 8px solid #262321;
 	border-radius: 8px;
@@ -39,30 +85,42 @@ body {
 .key {
 	position: relative;
 	display: flex;
-	align-items: flex-end;
-	justify-content: center;
-	padding: 0 0 16px;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 0 0 14px;
+	font-family: inherit;
+	touch-action: none;
 	cursor: pointer;
 	outline: none;
 	transition: background-color 90ms ease, transform 90ms ease;
 }
 
-.key::after {
-	position: absolute;
-	bottom: 14px;
-	left: 0;
-	width: 100%;
-	content: attr(data-note);
-	text-align: center;
-	font-size: clamp(12px, 2vw, 17px);
+.note-label {
+	font-size: 11px;
 	font-weight: 700;
 	pointer-events: none;
+}
+
+.shortcut {
+	height: 18px;
+	font-size: 13px;
+	font-weight: 700;
+	pointer-events: none;
+}
+
+.key:focus-visible,
+.piano-scroll:focus-visible {
+	outline: 2px solid #287b61;
+	outline-offset: -3px;
 }
 
 .white {
 	z-index: 0;
 	flex: 1 1 0;
 	min-width: 0;
+	border: 0;
 	border-right: 1px solid #c8c2b7;
 	border-radius: 0 0 4px 4px;
 	background: linear-gradient(100deg, #fffefa, #e9e5dc);
@@ -71,6 +129,14 @@ body {
 
 .white:last-child {
 	border-right: 0;
+}
+
+.white.mapped {
+	box-shadow: inset 0 -4px #287b61;
+}
+
+.white[data-note^="C"] .note-label {
+	color: #17604a;
 }
 
 .white.active {
@@ -82,9 +148,8 @@ body {
 	position: absolute;
 	top: 0;
 	z-index: 1;
-	width: 9%;
 	height: 62%;
-	border: 2px solid #fff;
+	border: 1px solid #ddd;
 	border-top: 0;
 	border-radius: 0 0 7px 7px;
 	background: linear-gradient(110deg, #373737, #090909);
@@ -92,15 +157,45 @@ body {
 	color: #fff;
 }
 
-.black[data-note="Db"] { left: calc(100% / 7 - 4.5%); }
-.black[data-note="Eb"] { left: calc(200% / 7 - 4.5%); }
-.black[data-note="Gb"] { left: calc(400% / 7 - 4.5%); }
-.black[data-note="Ab"] { left: calc(500% / 7 - 4.5%); }
-.black[data-note="Bb"] { left: calc(600% / 7 - 4.5%); }
-
 .black.active {
 	transform: translateY(3px);
 	background: #287b61;
+}
+
+.black .note-label {
+	font-size: 10px;
+}
+
+.help,
+#audio-status,
+noscript {
+	color: #bfbab2;
+	font-size: 13px;
+	line-height: 1.6;
+}
+
+#audio-status {
+	min-height: 21px;
+	margin-bottom: 0;
+}
+
+@media (max-width: 600px) {
+	body {
+		padding: 24px 12px;
+	}
+
+	.controls {
+		gap: 16px;
+	}
+
+	h1 {
+		width: 100%;
+	}
+
+	.piano {
+		width: 1480px;
+		height: 250px;
+	}
 }
 
 

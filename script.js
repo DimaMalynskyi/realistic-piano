@@ -1,103 +1,306 @@
 // Midi Piano
 
-const NOTE_DETAILS = [
-    { note: "C", key: "Z", frequency: 261.626 },
-    { note: "Db", key: "S", frequency: 277.183 },
-    { note: "D", key: "X", frequency: 293.665 },
-    { note: "Eb", key: "D", frequency: 311.127 },
-    { note: "E", key: "C", frequency: 329.628 },
-    { note: "F", key: "V", frequency: 349.228 },
-    { note: "Gb", key: "G", frequency: 369.994 },
-    { note: "G", key: "B", frequency: 391.995 },
-    { note: "Ab", key: "H", frequency: 415.305 },
-    { note: "A", key: "N", frequency: 440 },
-    { note: "Bb", key: "J", frequency: 466.164 },
-    { note: "B", key: "M", frequency: 493.883 },
-]
+const FIRST_OCTAVE = 2
+const LAST_OCTAVE = 6
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+const FLAT_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
+const SHORTCUTS = ["Z", "S", "X", "D", "C", "V", "G", "B", "H", "N", "J", "M"]
+const NOTE_DETAILS = []
 
-const pianoKeys = document.querySelectorAll(".key")
+for (let octave = FIRST_OCTAVE; octave <= LAST_OCTAVE; octave++) {
+    NOTE_NAMES.forEach((name, semitone) => {
+        const midi = (octave + 1) * 12 + semitone
+        NOTE_DETAILS.push({
+            note: `${name}${octave}`,
+            flat: `${FLAT_NAMES[semitone]}${octave}`,
+            octave,
+            semitone,
+            midi,
+            frequency: 440 * 2 ** ((midi - 69) / 12),
+            key: SHORTCUTS[semitone],
+            black: name.includes("#")
+        })
+    })
+}
+
+const piano = document.querySelector(".piano")
+const octaveSelect = document.querySelector("#octave")
+const volume = document.querySelector("#volume")
+const audioStatus = document.querySelector("#audio-status")
+const notesByName = new Map(NOTE_DETAILS.map(detail => [detail.note, detail]))
+const keyElements = new Map()
 const activeNotes = new Map()
+const inputNotes = new Map()
+const noteBuffers = new Map()
+let selectedOctave = Number(octaveSelect.value)
 let audioContext
+let masterGain
+let compressor
+let audioReady
 
-function startNote(noteDetail) {
-    if (activeNotes.has(noteDetail.note)) return
+function renderKeys() {
+    const whiteKeyCount = NOTE_DETAILS.filter(detail => !detail.black).length
+    let whiteKeysBefore = 0
 
+    NOTE_DETAILS.forEach(detail => {
+        const key = document.createElement("button")
+        key.type = "button"
+        key.className = `key ${detail.black ? "black" : "white"}`
+        key.dataset.note = detail.note
+        key.dataset.octave = detail.octave
+        key.setAttribute("aria-pressed", "false")
+        key.title = detail.black ? `${detail.note} / ${detail.flat}` : detail.note
+
+        if (detail.black) {
+            key.style.left = `${(whiteKeysBefore - 0.32) / whiteKeyCount * 100}%`
+            key.style.width = `${0.64 / whiteKeyCount * 100}%`
+        } else {
+            whiteKeysBefore++
+        }
+
+        const label = document.createElement("span")
+        label.className = "note-label"
+        label.textContent = detail.note
+        const shortcut = document.createElement("span")
+        shortcut.className = "shortcut"
+        key.append(shortcut, label)
+        piano.append(key)
+        keyElements.set(detail.note, key)
+
+        key.addEventListener("pointerdown", event => {
+            if (event.pointerType === "mouse" && event.button !== 0) return
+            event.preventDefault()
+            key.setPointerCapture(event.pointerId)
+            pressNote(detail, `pointer:${event.pointerId}`)
+        })
+        const releasePointer = event => releaseInput(`pointer:${event.pointerId}`)
+        key.addEventListener("pointerup", releasePointer)
+        key.addEventListener("pointercancel", releasePointer)
+        key.addEventListener("lostpointercapture", releasePointer)
+    })
+    updateOctave(false)
+}
+
+function updateOctave(scroll = true) {
+    NOTE_DETAILS.forEach(detail => {
+        const key = keyElements.get(detail.note)
+        const selected = detail.octave === selectedOctave
+        key.classList.toggle("mapped", selected)
+        key.querySelector(".shortcut").textContent = selected ? detail.key : ""
+        key.setAttribute("aria-label", `${key.title}${selected ? `, keyboard ${detail.key}` : ""}`)
+    })
+    octaveSelect.value = selectedOctave
+    if (scroll) {
+        keyElements.get(`F${selectedOctave}`).scrollIntoView({ block: "nearest", inline: "center" })
+    }
+}
+
+async function ensureAudio() {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext
-    if (!AudioContextClass) return
+    if (!AudioContextClass) throw new Error("This browser does not support Web Audio.")
 
-    audioContext ??= new AudioContextClass()
-    if (audioContext.state === "suspended") audioContext.resume()
+    if (!audioContext) {
+        audioContext = new AudioContextClass()
+        masterGain = audioContext.createGain()
+        masterGain.gain.value = Number(volume.value) / 100
+        compressor = audioContext.createDynamicsCompressor()
+        compressor.threshold.value = -18
+        compressor.knee.value = 18
+        compressor.ratio.value = 4
+        compressor.attack.value = 0.003
+        compressor.release.value = 0.2
+        compressor.connect(masterGain)
+        masterGain.connect(audioContext.destination)
+        audioContext.addEventListener("statechange", () => {
+            if (audioContext.state === "running") return
+            releaseAllInputs()
+            audioStatus.textContent = "Audio paused. Play a note to resume."
+        })
+    }
 
+    if (audioContext.state !== "running") {
+        audioReady ??= audioContext.resume().finally(() => { audioReady = undefined })
+        await audioReady
+    }
+    if (audioContext.state !== "running") throw new Error("Audio is paused. Play again to resume.")
+    audioStatus.textContent = "Sound ready"
+}
+
+function createPianoBuffer(detail) {
+    if (noteBuffers.has(detail.note)) return noteBuffers.get(detail.note)
+
+    const sampleRate = audioContext.sampleRate
+    const decay = Math.max(0.65, 2.8 * (130.81 / detail.frequency) ** 0.35)
+    const duration = decay * 4 + 0.15
+    const buffer = audioContext.createBuffer(1, Math.ceil(duration * sampleRate), sampleRate)
+    const samples = buffer.getChannelData(0)
+    const stiffness = 0.00008 * (detail.frequency / 261.626) ** 0.5
+    let totalAmplitude = 0
+
+    for (let harmonic = 1; harmonic <= 20; harmonic++) {
+        const frequency = detail.frequency * harmonic *
+            Math.sqrt((1 + stiffness * harmonic ** 2) / (1 + stiffness))
+        if (frequency >= sampleRate * 0.45) break
+
+        const amplitude = 1 / harmonic ** 1.65
+        totalAmplitude += amplitude
+        const partialDecay = decay / (1 + (harmonic - 1) * 0.32)
+        const decayStep = Math.exp(-1 / (partialDecay * sampleRate))
+        const phaseStep = 2 * Math.PI * frequency / sampleRate
+        const rotationReal = Math.cos(phaseStep)
+        const rotationImaginary = Math.sin(phaseStep)
+        const attackSamples = sampleRate * (0.004 + 0.002 / harmonic)
+        let phaseReal = 1
+        let phaseImaginary = 0
+        let level = amplitude
+
+        for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex++) {
+            samples[sampleIndex] += phaseImaginary * level * Math.min(1, sampleIndex / attackSamples)
+            const nextReal = phaseReal * rotationReal - phaseImaginary * rotationImaginary
+            phaseImaginary = phaseImaginary * rotationReal + phaseReal * rotationImaginary
+            phaseReal = nextReal
+            level *= decayStep
+        }
+    }
+
+    let noiseSeed = detail.midi
+    let previousNoise = 0
+    const fadeSamples = Math.ceil(sampleRate * 0.08)
+    for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex++) {
+        const time = sampleIndex / sampleRate
+        noiseSeed = (Math.imul(noiseSeed, 1664525) + 1013904223) >>> 0
+        const noise = noiseSeed / 2147483648 - 1
+        previousNoise = previousNoise * 0.75 + noise * 0.25
+        const hammer = previousNoise * 0.035 * Math.exp(-time / 0.009) * Math.min(1, time / 0.002)
+        const tailFade = Math.min(1, (samples.length - 1 - sampleIndex) / fadeSamples)
+        samples[sampleIndex] = (samples[sampleIndex] / totalAmplitude + hammer) * 0.8 * tailFade
+    }
+    noteBuffers.set(detail.note, buffer)
+    return buffer
+}
+
+function startNote(detail, entry) {
+    const source = audioContext.createBufferSource()
+    source.buffer = createPianoBuffer(detail)
     const envelope = audioContext.createGain()
-    const fundamental = audioContext.createOscillator()
-    const overtone = audioContext.createOscillator()
-    const overtoneGain = audioContext.createGain()
     const now = audioContext.currentTime
-
-    fundamental.type = "sine"
-    fundamental.frequency.value = noteDetail.frequency
-    overtone.type = "sine"
-    overtone.frequency.value = noteDetail.frequency * 2
-    overtoneGain.gain.value = 0.12
-    envelope.gain.setValueAtTime(0.0001, now)
-    envelope.gain.exponentialRampToValueAtTime(0.22, now + 0.012)
-    envelope.gain.exponentialRampToValueAtTime(0.09, now + 0.35)
-
-    fundamental.connect(envelope)
-    overtone.connect(overtoneGain)
-    overtoneGain.connect(envelope)
-    envelope.connect(audioContext.destination)
-    fundamental.start(now)
-    overtone.start(now)
-
-    const key = document.querySelector(`.key[data-note="${noteDetail.note}"]`)
-    key?.classList.add("active")
-    activeNotes.set(noteDetail.note, { envelope, fundamental, overtone, key })
+    envelope.gain.setValueAtTime(0, now)
+    envelope.gain.linearRampToValueAtTime(0.24, now + 0.005)
+    source.connect(envelope)
+    envelope.connect(compressor)
+    const voice = { source, envelope, startedAt: now, released: false }
+    entry.voice = voice
+    source.onended = () => {
+        source.disconnect()
+        envelope.disconnect()
+        if (entry.voice === voice) entry.voice = undefined
+    }
+    source.start(now)
 }
 
-function stopNote(note) {
-    const voice = activeNotes.get(note)
-    if (!voice) return
-
+function stopNote(voice) {
+    if (!voice || voice.released) return
+    voice.released = true
     const now = audioContext.currentTime
-    voice.envelope.gain.cancelScheduledValues(now)
-    voice.envelope.gain.setTargetAtTime(0.0001, now, 0.08)
-    voice.fundamental.stop(now + 0.3)
-    voice.overtone.stop(now + 0.3)
-    voice.key?.classList.remove("active")
+    if (typeof voice.envelope.gain.cancelAndHoldAtTime === "function") {
+        voice.envelope.gain.cancelAndHoldAtTime(now)
+    } else {
+        voice.envelope.gain.cancelScheduledValues(now)
+        voice.envelope.gain.setValueAtTime(0.24 * Math.min(1, (now - voice.startedAt) / 0.005), now)
+    }
+    voice.envelope.gain.setTargetAtTime(0, now, 0.055)
+    voice.envelope.gain.linearRampToValueAtTime(0, now + 0.4)
+    voice.source.stop(now + 0.41)
+}
+
+function setKeyActive(note, active) {
+    const key = keyElements.get(note)
+    key.classList.toggle("active", active)
+    key.setAttribute("aria-pressed", String(active))
+}
+
+async function pressNote(detail, input) {
+    if (inputNotes.has(input)) return
+    inputNotes.set(input, detail.note)
+    let entry = activeNotes.get(detail.note)
+    if (entry) {
+        entry.inputs.add(input)
+        return
+    }
+    entry = { inputs: new Set([input]), voice: undefined }
+    activeNotes.set(detail.note, entry)
+    setKeyActive(detail.note, true)
+
+    try {
+        await ensureAudio()
+        if (activeNotes.get(detail.note) !== entry || entry.inputs.size === 0) return
+        startNote(detail, entry)
+    } catch (error) {
+        if (activeNotes.get(detail.note) === entry) {
+            for (const owner of entry.inputs) inputNotes.delete(owner)
+            activeNotes.delete(detail.note)
+            setKeyActive(detail.note, false)
+        }
+        audioStatus.textContent = error.message
+    }
+}
+
+function releaseInput(input) {
+    const note = inputNotes.get(input)
+    if (!note) return
+    inputNotes.delete(input)
+    const entry = activeNotes.get(note)
+    if (!entry) return
+    entry.inputs.delete(input)
+    if (entry.inputs.size > 0) return
+    stopNote(entry.voice)
     activeNotes.delete(note)
+    setKeyActive(note, false)
 }
 
-function getNoteDetail(keyCode) {
-    return NOTE_DETAILS.find(({ key }) => `Key${key}` === keyCode)
+function releaseAllInputs() {
+    for (const input of inputNotes.keys()) releaseInput(input)
 }
 
 document.addEventListener("keydown", event => {
-    const noteDetail = getNoteDetail(event.code)
-    if (!noteDetail || event.repeat) return
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+    if (event.target.closest("textarea, [contenteditable='true'], input:not([type='range'])")) return
+    if (event.repeat) return
 
-    event.preventDefault()
-    startNote(noteDetail)
-})
-
-document.addEventListener("keyup", event => {
-    const noteDetail = getNoteDetail(event.code)
-    if (noteDetail) stopNote(noteDetail.note)
-})
-
-pianoKeys.forEach(key => {
-    const noteDetail = NOTE_DETAILS.find(({ note }) => note === key.dataset.note)
-    if (!noteDetail) return
-
-    key.addEventListener("pointerdown", event => {
+    const octaveDigit = /^Digit([1-5])$/.exec(event.code)
+    if (octaveDigit || event.code === "ArrowLeft" || event.code === "ArrowRight") {
+        if (event.target.closest("input, select")) return
         event.preventDefault()
-        key.setPointerCapture(event.pointerId)
-        startNote(noteDetail)
-    })
-    key.addEventListener("pointerup", () => stopNote(noteDetail.note))
-    key.addEventListener("pointercancel", () => stopNote(noteDetail.note))
+        selectedOctave = octaveDigit ? Number(octaveDigit[1]) + FIRST_OCTAVE - 1 :
+            Math.max(FIRST_OCTAVE, Math.min(LAST_OCTAVE, selectedOctave + (event.code === "ArrowRight" ? 1 : -1)))
+        updateOctave()
+        return
+    }
+
+    let detail = NOTE_DETAILS.find(note => note.octave === selectedOctave && `Key${note.key}` === event.code)
+    if ((event.code === "Space" || event.code === "Enter") && event.target.matches(".key")) {
+        detail = notesByName.get(event.target.dataset.note)
+    }
+    if (!detail) return
+    event.preventDefault()
+    pressNote(detail, `keyboard:${event.code}`)
 })
 
-window.addEventListener("blur", () => {
-    activeNotes.forEach((_, note) => stopNote(note))
+document.addEventListener("keyup", event => releaseInput(`keyboard:${event.code}`))
+document.addEventListener("pointerup", event => releaseInput(`pointer:${event.pointerId}`))
+document.addEventListener("pointercancel", event => releaseInput(`pointer:${event.pointerId}`))
+octaveSelect.addEventListener("change", () => {
+    selectedOctave = Number(octaveSelect.value)
+    updateOctave()
 })
+volume.addEventListener("input", () => {
+    if (masterGain) masterGain.gain.setTargetAtTime(Number(volume.value) / 100, audioContext.currentTime, 0.025)
+})
+window.addEventListener("blur", releaseAllInputs)
+window.addEventListener("pagehide", releaseAllInputs)
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) releaseAllInputs()
+})
+
+renderKeys()
+updateOctave()
