@@ -1,7 +1,7 @@
 :root {
 	color-scheme: light;
 	font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-	background: #c1bfbb;
+	background: #0b0c0d;
 	color: #252321;
 }
 
@@ -16,8 +16,9 @@ body {
 	place-items: center;
 	padding: 32px 16px;
 	background:
-		radial-gradient(ellipse at 50% 0%, #fffdf7 0%, transparent 65%),
-		#f2eee5;
+		linear-gradient(135deg, transparent 0 35%, rgb(255 255 255 / 3%) 35.2%, transparent 36%, transparent 72%, rgb(255 255 255 / 2%) 72.2%, transparent 73%),
+		linear-gradient(118deg, rgb(255 255 255 / 5%) 0%, transparent 24%, rgb(255 255 255 / 1.5%) 52%, transparent 76%),
+		linear-gradient(155deg, #303234 0%, #191b1d 42%, #08090a 100%);
 }
 
 .piano {
@@ -75,6 +76,31 @@ body {
 .white.active {
 	transform: translateY(3px);
 	background: #f2c46d;
+}
+
+.black {
+	position: absolute;
+	top: 0;
+	z-index: 1;
+	width: 9%;
+	height: 62%;
+	border: 2px solid #fff;
+	border-top: 0;
+	border-radius: 0 0 7px 7px;
+	background: linear-gradient(110deg, #373737, #090909);
+	box-shadow: 0 5px 0 rgb(38 35 33 / 30%);
+	color: #fff;
+}
+
+.black[data-note="Db"] { left: calc(100% / 7 - 4.5%); }
+.black[data-note="Eb"] { left: calc(200% / 7 - 4.5%); }
+.black[data-note="Gb"] { left: calc(400% / 7 - 4.5%); }
+.black[data-note="Ab"] { left: calc(500% / 7 - 4.5%); }
+.black[data-note="Bb"] { left: calc(600% / 7 - 4.5%); }
+
+.black.active {
+	transform: translateY(3px);
+	background: #287b61;
 }
 
 
