@@ -9,26 +9,14 @@
 </head>
 <body>
     <main class="instrument">
-        <header class="controls">
-            <h1>Midi Piano</h1>
-            <label for="octave">Keyboard octave
-                <select id="octave">
-                    <option value="2">C2 - B2 (1)</option>
-                    <option value="3">C3 - B3 (2)</option>
-                    <option value="4" selected>C4 - B4 (3)</option>
-                    <option value="5">C5 - B5 (4)</option>
-                    <option value="6">C6 - B6 (5)</option>
-                </select>
-            </label>
-            <label for="volume">Volume
-                <input id="volume" type="range" min="0" max="100" value="65">
-            </label>
+        <header class="piano-heading">
+            <h1>Piano</h1>
         </header>
         <div class="piano-scroll" tabindex="0" aria-label="Scroll piano keyboard">
-            <div class="piano" role="group" aria-label="Piano, C2 through B6"></div>
+            <div class="piano" role="group" aria-label="Piano, C3 through B5"></div>
         </div>
         <p class="help">White keys: Z X C V B N M. Black keys: S D G H J.
-            Octave: 1-5 or Left/Right arrows. Scroll sideways for the full keyboard.</p>
+            1: C3 &nbsp; 2: C4 &nbsp; 3: C5.</p>
         <p id="audio-status" role="status">Sound starts when you play a note.</p>
         <noscript>Enable JavaScript to play the piano.</noscript>
     </main>

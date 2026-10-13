@@ -1,7 +1,9 @@
 // Midi Piano
 
-const FIRST_OCTAVE = 2
-const LAST_OCTAVE = 6
+const FIRST_OCTAVE = 3
+const LAST_OCTAVE = 5
+const VOICE_GAIN = 0.2
+const ATTACK_TIME = 0.008
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 const FLAT_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
 const SHORTCUTS = ["Z", "S", "X", "D", "C", "V", "G", "B", "H", "N", "J", "M"]
@@ -24,18 +26,17 @@ for (let octave = FIRST_OCTAVE; octave <= LAST_OCTAVE; octave++) {
 }
 
 const piano = document.querySelector(".piano")
-const octaveSelect = document.querySelector("#octave")
-const volume = document.querySelector("#volume")
 const audioStatus = document.querySelector("#audio-status")
 const notesByName = new Map(NOTE_DETAILS.map(detail => [detail.note, detail]))
 const keyElements = new Map()
 const activeNotes = new Map()
 const inputNotes = new Map()
 const noteBuffers = new Map()
-let selectedOctave = Number(octaveSelect.value)
+let selectedOctave = 4
 let audioContext
 let masterGain
 let compressor
+let toneFilter
 let audioReady
 
 function renderKeys() {
@@ -78,18 +79,16 @@ function renderKeys() {
         key.addEventListener("pointercancel", releasePointer)
         key.addEventListener("lostpointercapture", releasePointer)
     })
-    updateOctave(false)
+    updateShortcuts(false)
 }
 
-function updateOctave(scroll = true) {
+function updateShortcuts(scroll = true) {
     NOTE_DETAILS.forEach(detail => {
         const key = keyElements.get(detail.note)
         const selected = detail.octave === selectedOctave
-        key.classList.toggle("mapped", selected)
         key.querySelector(".shortcut").textContent = selected ? detail.key : ""
         key.setAttribute("aria-label", `${key.title}${selected ? `, keyboard ${detail.key}` : ""}`)
     })
-    octaveSelect.value = selectedOctave
     if (scroll) {
         keyElements.get(`F${selectedOctave}`).scrollIntoView({ block: "nearest", inline: "center" })
     }
@@ -102,13 +101,18 @@ async function ensureAudio() {
     if (!audioContext) {
         audioContext = new AudioContextClass()
         masterGain = audioContext.createGain()
-        masterGain.gain.value = Number(volume.value) / 100
+        masterGain.gain.value = 0.55
+        toneFilter = audioContext.createBiquadFilter()
+        toneFilter.type = "lowpass"
+        toneFilter.frequency.value = 4200
+        toneFilter.Q.value = 0.5
         compressor = audioContext.createDynamicsCompressor()
         compressor.threshold.value = -18
         compressor.knee.value = 18
         compressor.ratio.value = 4
         compressor.attack.value = 0.003
         compressor.release.value = 0.2
+        toneFilter.connect(compressor)
         compressor.connect(masterGain)
         masterGain.connect(audioContext.destination)
         audioContext.addEventListener("statechange", () => {
@@ -134,22 +138,22 @@ function createPianoBuffer(detail) {
     const duration = decay * 4 + 0.15
     const buffer = audioContext.createBuffer(1, Math.ceil(duration * sampleRate), sampleRate)
     const samples = buffer.getChannelData(0)
-    const stiffness = 0.00008 * (detail.frequency / 261.626) ** 0.5
+    const stiffness = 0.00006 * (detail.frequency / 261.626) ** 0.5
     let totalAmplitude = 0
 
-    for (let harmonic = 1; harmonic <= 20; harmonic++) {
+    for (let harmonic = 1; harmonic <= 16; harmonic++) {
         const frequency = detail.frequency * harmonic *
             Math.sqrt((1 + stiffness * harmonic ** 2) / (1 + stiffness))
         if (frequency >= sampleRate * 0.45) break
 
-        const amplitude = 1 / harmonic ** 1.65
+        const amplitude = 1 / harmonic ** 1.9
         totalAmplitude += amplitude
         const partialDecay = decay / (1 + (harmonic - 1) * 0.32)
         const decayStep = Math.exp(-1 / (partialDecay * sampleRate))
         const phaseStep = 2 * Math.PI * frequency / sampleRate
         const rotationReal = Math.cos(phaseStep)
         const rotationImaginary = Math.sin(phaseStep)
-        const attackSamples = sampleRate * (0.004 + 0.002 / harmonic)
+        const attackSamples = sampleRate * (0.006 + 0.002 / harmonic)
         let phaseReal = 1
         let phaseImaginary = 0
         let level = amplitude
@@ -171,7 +175,7 @@ function createPianoBuffer(detail) {
         noiseSeed = (Math.imul(noiseSeed, 1664525) + 1013904223) >>> 0
         const noise = noiseSeed / 2147483648 - 1
         previousNoise = previousNoise * 0.75 + noise * 0.25
-        const hammer = previousNoise * 0.035 * Math.exp(-time / 0.009) * Math.min(1, time / 0.002)
+        const hammer = previousNoise * 0.015 * Math.exp(-time / 0.009) * Math.min(1, time / 0.003)
         const tailFade = Math.min(1, (samples.length - 1 - sampleIndex) / fadeSamples)
         samples[sampleIndex] = (samples[sampleIndex] / totalAmplitude + hammer) * 0.8 * tailFade
     }
@@ -185,9 +189,9 @@ function startNote(detail, entry) {
     const envelope = audioContext.createGain()
     const now = audioContext.currentTime
     envelope.gain.setValueAtTime(0, now)
-    envelope.gain.linearRampToValueAtTime(0.24, now + 0.005)
+    envelope.gain.linearRampToValueAtTime(VOICE_GAIN, now + ATTACK_TIME)
     source.connect(envelope)
-    envelope.connect(compressor)
+    envelope.connect(toneFilter)
     const voice = { source, envelope, startedAt: now, released: false }
     entry.voice = voice
     source.onended = () => {
@@ -202,13 +206,15 @@ function stopNote(voice) {
     if (!voice || voice.released) return
     voice.released = true
     const now = audioContext.currentTime
+    const heldGain = VOICE_GAIN * Math.min(1, (now - voice.startedAt) / ATTACK_TIME)
     if (typeof voice.envelope.gain.cancelAndHoldAtTime === "function") {
         voice.envelope.gain.cancelAndHoldAtTime(now)
     } else {
         voice.envelope.gain.cancelScheduledValues(now)
-        voice.envelope.gain.setValueAtTime(0.24 * Math.min(1, (now - voice.startedAt) / 0.005), now)
+        voice.envelope.gain.setValueAtTime(heldGain, now)
     }
     voice.envelope.gain.setTargetAtTime(0, now, 0.055)
+    voice.envelope.gain.setValueAtTime(heldGain * Math.exp(-0.39 / 0.055), now + 0.39)
     voice.envelope.gain.linearRampToValueAtTime(0, now + 0.4)
     voice.source.stop(now + 0.41)
 }
@@ -264,16 +270,14 @@ function releaseAllInputs() {
 
 document.addEventListener("keydown", event => {
     if (event.ctrlKey || event.metaKey || event.altKey) return
-    if (event.target.closest("textarea, [contenteditable='true'], input:not([type='range'])")) return
-    if (event.repeat) return
+    if (event.target.closest("input, select, textarea, [contenteditable='true']")) return
 
-    const octaveDigit = /^Digit([1-5])$/.exec(event.code)
-    if (octaveDigit || event.code === "ArrowLeft" || event.code === "ArrowRight") {
-        if (event.target.closest("input, select")) return
+    const octaveDigit = /^Digit([1-3])$/.exec(event.code)
+    if (octaveDigit) {
         event.preventDefault()
-        selectedOctave = octaveDigit ? Number(octaveDigit[1]) + FIRST_OCTAVE - 1 :
-            Math.max(FIRST_OCTAVE, Math.min(LAST_OCTAVE, selectedOctave + (event.code === "ArrowRight" ? 1 : -1)))
-        updateOctave()
+        if (event.repeat) return
+        selectedOctave = Number(octaveDigit[1]) + FIRST_OCTAVE - 1
+        updateShortcuts()
         return
     }
 
@@ -283,19 +287,13 @@ document.addEventListener("keydown", event => {
     }
     if (!detail) return
     event.preventDefault()
+    if (event.repeat) return
     pressNote(detail, `keyboard:${event.code}`)
 })
 
 document.addEventListener("keyup", event => releaseInput(`keyboard:${event.code}`))
 document.addEventListener("pointerup", event => releaseInput(`pointer:${event.pointerId}`))
 document.addEventListener("pointercancel", event => releaseInput(`pointer:${event.pointerId}`))
-octaveSelect.addEventListener("change", () => {
-    selectedOctave = Number(octaveSelect.value)
-    updateOctave()
-})
-volume.addEventListener("input", () => {
-    if (masterGain) masterGain.gain.setTargetAtTime(Number(volume.value) / 100, audioContext.currentTime, 0.025)
-})
 window.addEventListener("blur", releaseAllInputs)
 window.addEventListener("pagehide", releaseAllInputs)
 document.addEventListener("visibilitychange", () => {
@@ -303,4 +301,3 @@ document.addEventListener("visibilitychange", () => {
 })
 
 renderKeys()
-updateOctave()
